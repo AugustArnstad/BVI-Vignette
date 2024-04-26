@@ -1,0 +1,307 @@
+---
+title: "Binomial logit and probit"
+author: "August Arnstad"
+date: "`r format(Sys.time(), '%d.%m.%Y')`"
+output:
+  pdf_document:
+    toc: yes
+    toc_depth: '2'
+  html_document:
+    toc: yes
+    toc_float: yes
+    toc_depth: 2
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+library(formatR)
+showsol <- FALSE
+library(knitr)
+library(devtools)
+knitr::opts_chunk$set(tidy.opts = list(width.cutoff = 68), 
+                      tidy = TRUE, 
+                      warning = FALSE, 
+                      error = FALSE, 
+                      message = FALSE, 
+                      echo = TRUE, 
+                      fig.width=7, 
+                      fig.height=5, 
+                      fig.align="center")
+
+library(remotes)
+library(devtools)
+if(!require(devtools)) install.packages("devtools")
+devtools::install_github("AugustArnstad/VariableImportanceINLA")
+library(VariableImportanceINLA)
+```
+
+## Questions and deficiencies
+
+1) The package so far only works for LMMs. I need to get a dataset I can use for binomial and Poisson GLMMs.
+2) The package cannot handle categorical covariates, as the relative weights part of the package is not capable of handling this yet
+3) Is the heritability caluclated correctly? In this equation
+$$
+h^2 = \frac{\sigma^2_a}{\sigma_a^2 + \sigma_e^2}
+$$
+does $\sigma_e^2$ refer to only residual variance, or does it also include the variance of the random effects? I think it should only include the residual variance, but I am not sure. Currently the heritability is implemented using all random effects, not just the residual variance.
+4) Should I compute multiple heritabilities? Currently, I let the user specify the "additive parameter", and the heritability is calculated using this as the additive dispersion parameter. However, I could also calculate the heritability for all random effects, and let the user decide which one to use. Does this make sense?
+
+
+## Example code for binary model
+
+```{r}
+library(INLA)
+library(ggplot2)
+library(reshape2)
+library(tidyr)
+library(MASS)
+set.seed(123)
+
+# Number of observations and groups
+n <- 10000
+n_groups <- 100
+
+X <- mvrnorm(n = n, 
+             mu = c(0, 0, 0), 
+             Sigma = matrix(c(1, 0, 0,
+                            0, 1, 0,
+                            0, 0, 1), ncol=3))
+
+# Simulate fixed effects
+X1 <- X[, 1] # rnorm(n, mean=0, sd=1)
+X2 <- X[, 2] # rnorm(n, mean=0, sd=1)
+X3 <- X[, 3] # rnorm(n, mean=0, sd=1)
+
+
+# Simulate random effects groups
+Z1 <- sample(1:n_groups, n, replace=TRUE)
+
+# Coefficients for fixed effects
+#beta0 <- 1
+beta1 <- 1
+beta2 <- sqrt(2)
+beta3 <- sqrt(3)
+
+# Coefficients for random effects (standard deviations)
+sigma_z1 <- 1
+
+# Simulate outcome variable Y
+random_effect_contributions_z1 <- rnorm(n_groups, mean=0, sd=sqrt(sigma_z1))[Z1]
+
+random_effect <- rep(rnorm(n_groups, mean=0, sd=sqrt(sigma_z1)), each=n/n_groups)
+
+var(random_effect_contributions_z1)
+#error_term <- rnorm(n, mean=0, sd=1)
+
+eta <- beta1*X1 + beta2*X2 + beta3*X3 + random_effect_contributions_z1 #random_effect #+ error_term
+var(eta)
+
+p_logit <- exp(eta)/(1+exp(eta))
+
+p_probit <- pnorm(eta)
+
+hist(p_logit)
+hist(p_probit)
+
+# Simulate binomial response based on these probabilities
+y_logit_bin <- rbinom(n, size = 1, prob = p_logit)
+y_probit_bin <- rbinom(n, size = 1, prob = p_probit)
+
+# Combine into a data frame
+data_inla_binomal <- data.frame(y_logit_bin, y_probit_bin, X1, X2, X3, Z1)
+
+var_bin <- 1 + 2 + 3 + 1
+
+expected_bin_logit <- (1)/(pi^2/3 + 1 + 2 + 3 + 1)
+
+expected_bin_probit <- (1)/(1 + 1 + 2 + 3 + 1)
+
+```
+
+```{r}
+#glm_formula <- y_bin ~ X1 + X2 + X3
+#glmm_2re_formula <- y_bin ~ X1 + X2 + X3 + f(Z1, model="iid") + f(Z2, model="iid")
+#glmm_0fe_formula <- y_bin ~ f(Z1, model="iid") + f(Z2, model="iid")
+#model_bin_glm <- VariableImportanceINLA::perform_inla_analysis(data_inla_binomal, glm_formula, family = "binomial", link_func = "probit")
+#model_bin_glmm2 <- VariableImportanceINLA::perform_inla_analysis(data_inla_binomal, glmm_2re_formula, family = "binomial", link_func = "probit")
+#model_bin_glmm0 <- VariableImportanceINLA::perform_inla_analysis(data_inla_binomal, glmm_0fe_formula, family = "binomial", link_func = "probit")
+
+
+glmm_1re_formula_logit <- y_logit_bin ~ X1 + X2 + X3 + f(Z1, model="iid")
+glmm_1re_formula_probit <- y_probit_bin ~ X1 + X2 + X3 + f(Z1, model="iid")
+
+model_bin_glmm1_logit <- VariableImportanceINLA::perform_inla_analysis(data_inla_binomal, glmm_1re_formula_logit, family = "binomial", link_func = "logit")
+model_bin_glmm1_probit <- VariableImportanceINLA::perform_inla_analysis(data_inla_binomal, glmm_1re_formula_probit, family = "binomial", link_func = "probit")
+
+summary(model_bin_glmm1_logit)
+summary(model_bin_glmm1_probit)
+
+library(rptR)
+rptR_logit <- rptBinary(y_logit_bin ~ X1 + X2 + X3 + (1 | Z1), grname =  
+    c("Fixed", "Z1"), data = data_inla_binomal, nboot = 50, npermut = 0, link="logit", adjusted = FALSE)
+rptR_probit <- rptBinary(y_probit_bin ~ X1 + X2 + X3 + (1 | Z1), grname =  
+    c("Fixed", "Z1"), data = data_inla_binomal, nboot = 50, npermut = 0, link="probit", adjusted = FALSE)
+
+stoffel_heritability_logit <- rptR_logit$R$Z1
+stoffel_heritability_probit <- rptR_probit$R$Z1
+
+
+#plot(rptR)
+#summary(rptR)
+
+
+a <- inla.posterior.sample(model_bin_glmm1, n=1)
+
+a[[1]]$latent["Z1", drop = FALSE]
+
+pattern <- paste0("^", "Z1", ":")
+latent_row_names <- rownames(a[[1]]$latent)
+random_names <- grep(pattern, latent_row_names, value = TRUE)
+random_samples <- a[[1]]$latent[random_names, , drop = FALSE]
+
+random_samples
+
+var(random_samples)
+
+
+```
+
+
+
+```{r}
+#bin_glm_samples <- VariableImportanceINLA::sample_posterior_count(model_bin_glm, glm_formula, data_inla_binomal, n_samp=500)
+
+#bin_glmm2_samples <- VariableImportanceINLA::sample_posterior_count(model_bin_glmm2, glmm_2re_formula, data_inla_binomal, n_samp=10000, additive_param = "Z1")
+
+#bin_glmm0_samples <- VariableImportanceINLA::sample_posterior_count(model_bin_glmm0, glmm_0fe_formula, data_inla_binomal, n_samp=500, additive_param = "Z1")
+
+bin_glmm1_logit_samples <- VariableImportanceINLA::sample_posterior_count(model_bin_glmm1_logit, glmm_1re_formula_logit, data_inla_binomal, n_samp=500, additive_param = "Z1")
+
+bin_glmm1_probit_samples <- VariableImportanceINLA::sample_posterior_count(model_bin_glmm1_probit, glmm_1re_formula_probit, data_inla_binomal, n_samp=500, additive_param = "Z1")
+
+```
+
+```{r}
+
+plot_bin_glmm1_logit <- VariableImportanceINLA::plot_samples(bin_glmm1_logit_samples)
+
+summary(model_bin_glmm1_logit)
+plot_bin_glmm1_logit$fixed_effects
+plot_bin_glmm1_logit$random_effects
+plot_bin_glmm1_logit$R2
+plot_bin_glmm1_logit$heritability
+
+
+plot_bin_glmm1_probit <- VariableImportanceINLA::plot_samples(bin_glmm1_probit_samples)
+
+summary(model_bin_glmm1_probit)
+plot_bin_glmm1_probit$fixed_effects
+plot_bin_glmm1_probit$random_effects
+plot_bin_glmm1_probit$R2
+plot_bin_glmm1_probit$heritability
+
+
+
+stoffel_heritability_logit
+expected_bin_logit 
+mean(bin_glmm1_logit_samples$scaled_random_samples$Z1)
+
+
+stoffel_heritability_probit
+expected_bin_probit 
+mean(bin_glmm1_probit_samples$scaled_random_samples$Z1)
+
+
+```
+
+```{r}
+library(wesanderson)
+str(wes_palette("GrandBudapest2"))
+str(wes_palette("Moonrise3"))
+
+melted_importance_binomial_logit_f <- melt(as.data.frame(bin_glmm1_logit_samples$scaled_importance_samples))
+
+
+melted_importance_binomial_logit_f$intercept <- ifelse(
+  melted_importance_binomial_logit_f$variable == "X1", expected_bin_logit,
+  ifelse(melted_importance_binomial_logit_f$variable == "X2", 2 * expected_bin_logit,
+  ifelse(melted_importance_binomial_logit_f$variable == "X3", 3 * expected_bin_logit, NA))
+)
+
+melted_importance_binomial_logit_f
+
+fixed_effects_plot_binomial_logit <- ggplot(melted_importance_binomial_logit_f, aes(x = value)) +
+  geom_histogram(aes(y = ..density..), fill = "#F1BB7B", alpha = 0.8) +
+  geom_density(colour = "#FD6467", adjust = 1.5, linewidth=1.5) +
+  geom_vline(aes(xintercept = intercept), linetype = "dashed", color = "green", size = 1) +
+  scale_fill_manual(values = wes_palette("Royal1")) +
+  labs(title = "Relative Importance of Fixed Effects",
+       x = "Value",
+       y = "Density") +
+  theme_minimal() +
+  facet_wrap(~ variable, scales = "free_x") 
+
+fixed_effects_plot_binomial_logit
+
+
+```
+
+```{r}
+melted_importance_binomial_logit_r <- melt(as.data.frame(bin_glmm1_logit_samples$scaled_random_samples$Z1))
+
+random_effects_plot_binomial_logit <- ggplot(melted_importance_binomial_logit_r, aes(x = value)) +
+  geom_histogram(aes(y = ..density..), fill = "#C6CDF7", alpha = 0.8) +
+  geom_density(colour = "#E6A0C4", adjust = 1.5, linewidth=1.5) +
+  geom_vline(xintercept = stoffel_heritability_logit, linetype = "dashed", color = "black", size = 1) +
+  geom_vline(xintercept = expected_bin_logit, linetype = "dashed", color = "green", size = 1) +
+  labs(title = "Relative Importance of Fixed Effects",
+       x = "Value",
+       y = "Density") +
+  theme_minimal() +
+  facet_wrap(~ variable, scales = "free_x") 
+
+random_effects_plot_binomial_logit
+```
+
+```{r}
+melted_importance_binomial_probit_f <- melt(as.data.frame(bin_glmm1_probit_samples$scaled_importance_samples))
+
+melted_importance_binomial_probit_f$intercept <- ifelse(
+  melted_importance_binomial_probit_f$variable == "X1", expected_bin_probit,
+  ifelse(melted_importance_binomial_probit_f$variable == "X2", 2 * expected_bin_probit,
+  ifelse(melted_importance_binomial_probit_f$variable == "X3", 3 * expected_bin_probit, NA))
+)
+
+fixed_effects_plot_binomial_probit <- ggplot(melted_importance_binomial_probit_f, aes(x = value)) +
+  geom_histogram(aes(y = ..density..), fill = "#F1BB7B", alpha = 0.8) +
+  geom_density(colour = "#FD6467", adjust = 1.5, linewidth=1.5) +
+  geom_vline(aes(xintercept = intercept), linetype = "dashed", color = "green", size = 1) +
+  scale_fill_manual(values = wes_palette("Royal1")) +
+  labs(title = "Relative Importance of Fixed Effects",
+       x = "Value",
+       y = "Density") +
+  theme_minimal() +
+  facet_wrap(~ variable, scales = "free_x") 
+
+fixed_effects_plot_binomial_probit
+```
+
+
+```{r}
+
+melted_importance_binomial_probit_r <- melt(as.data.frame(bin_glmm1_probit_samples$scaled_random_samples$Z1))
+
+random_effects_plot_binomial_probit <- ggplot(melted_importance_binomial_probit_r, aes(x = value)) +
+  geom_histogram(aes(y = ..density..), fill = "#C6CDF7", alpha = 0.8) +
+  geom_density(colour = "#E6A0C4", adjust = 1.5, linewidth=1.5) +
+  geom_vline(xintercept = stoffel_heritability_probit, linetype = "dashed", color = "black", size = 1) +
+  geom_vline(xintercept = expected_bin_probit, linetype = "dashed", color = "green", size = 1) +
+  labs(title = "Relative Importance of Fixed Effects",
+       x = "Value",
+       y = "Density") +
+  theme_minimal() +
+  facet_wrap(~ variable, scales = "free_x") 
+
+random_effects_plot_binomial_probit
+```

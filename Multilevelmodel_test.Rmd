@@ -1,0 +1,130 @@
+---
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+```{r}
+library(misty)
+library(lme4)
+library(nlme)
+library(ggplot2)
+```
+
+
+```{r}
+# Load data set "Demo.twolevel" in the lavaan package
+data("Demo.twolevel", package = "lavaan")
+
+#----------------------------------------------------------------------------
+#'
+# Cluster mean centering, center() from the misty package
+Demo.twolevel$x2.c <- center(Demo.twolevel$x2, type = "CWC",
+                             cluster = Demo.twolevel$cluster)
+
+# Compute group means, cluster.scores() from the misty package
+Demo.twolevel$x2.b <- cluster.scores(Demo.twolevel$x2,
+                                     cluster = Demo.twolevel$cluster)
+
+# Estimate multilevel model using the lme4 package
+mod1a <- lmer(y1 ~ x2.c + x2.b + w1 + (1 + x2.c | cluster), data = Demo.twolevel,
+              REML = FALSE, control = lmerControl(optimizer = "bobyqa"))
+
+# Estimate multilevel model using the nlme package
+mod1b <- lme(y1 ~ x2.c + x2.b + w1, random = ~ 1 + x2.c | cluster, data = Demo.twolevel,
+             method = "ML")
+```
+
+```{r}
+head(Demo.twolevel)
+```
+
+
+```{r}
+#Last three grades are from Uni Wien
+
+grades = c(5, 5, 5, 3, 3, 4, 5, 5, 5, 3, 3, 3, 3, 4, 5, 3, 4, 5, 3, 3, 3, 4, 3, 5, 4, 3, 5, 5)
+
+sum_grades = sum(grades)
+  
+gpa = sum_grades/length(grades)
+
+gpa
+```
+
+
+```{r}
+#----------------------------------------------------------------------------
+#'
+# Example 1a: R-squared measures according to Rights and Sterba (2019)
+multilevel.r2(mod1a, plot=TRUE)
+#'
+# Example 1b: R-squared measures according to Rights and Sterba (2019)
+multilevel.r2(mod1b, plot=TRUE)
+
+```
+
+```{r}
+#'
+# Example 1a: Write Results into a text file
+multilevel.r2(mod1a, write = "ML-R2.txt")
+
+#-------------------------------------------------------------------------------
+
+# Example 2: Bar chart showing the decomposition of scaled total, within-cluster,
+# and between-cluster outcome variance
+multilevel.r2(mod1a, plot = TRUE)
+
+# Bar chart in gray scale
+multilevel.r2(mod1a, plot = TRUE, gray = TRUE)
+```
+
+
+```{r}
+# Example 3: Estimate multilevel model without random slopes
+# Note. R-squared measures by Raudenbush and Bryk (2002), and  Snijders and
+# Bosker (2012) should be computed based on the random intercept model
+mod2 <- lmer(y1 ~ x2.c + x2.b + w1 + (1 | cluster), data = Demo.twolevel,
+             REML = FALSE, control = lmerControl(optimizer = "bobyqa"))
+
+# Print all available R-squared measures
+multilevel.r2(mod2, print = "all")
+```
+
+
+
+# Save bar chart, ggsave() from the ggplot2 package
+#ggsave("Proportion_of_Variance.png", dpi = 600, width = 5.5, height = 5.5)
+
+#-------------------------------------------------------------------------------
+
+```{r}
+#-------------------------------------------------------------------------------
+
+# Example 4: Draw bar chart manually
+mod1a.r2 <- multilevel.r2(mod1a, output = FALSE)
+
+# Prepare data frame for ggplot()
+df <- data.frame(var = factor(rep(c("Total", "Within", "Between"), each = 5),
+                              level = c("Total", "Within", "Between")),
+                 part = factor(c("Fixed Slopes (Within)", "Fixed Slopes (Between)",
+                                 "Slope Variation (Within)", "Intercept Variation (Between)",
+                                 "Residual (Within)"),
+                 level = c("Residual (Within)", "Intercept Variation (Between)",
+                           "Slope Variation (Within)", "Fixed Slopes (Between)",
+                           "Fixed Slopes (Within)")),
+                 y = as.vector(mod1a.r2$result$rs$decomp))
+
+# Draw bar chart in line with the default setting of multilevel.r2()
+ggplot(df, aes(x = var, y = y, fill = part)) +
+  theme_bw() +
+  geom_bar(stat = "identity") +
+  scale_fill_manual(values = c("#E69F00", "#009E73", "#CC79A7", "#0072B2", "#D55E00")) +
+  scale_y_continuous(name = "Proportion of Variance", breaks = seq(0, 1, by = 0.1)) +
+  theme(axis.title.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        legend.title = element_blank(),
+        legend.position = "bottom",
+        legend.box.margin = margin(-10, 6, 6, 6)) +
+  guides(fill = guide_legend(nrow = 2, reverse = TRUE))library(misty)
+```
+

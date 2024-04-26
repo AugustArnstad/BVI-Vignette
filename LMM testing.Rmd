@@ -1,0 +1,99 @@
+---
+title: "Random slope test"
+author: "August Arnstad"
+date: "2024-01-30"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r}
+# Loading necessary library
+library(lme4)
+
+# Setting seed for reproducibility
+set.seed(0)
+
+num_groups = 20
+num_measurements = 10
+
+intercept <- rep(1, num_subjects * num_measurements)
+
+fixed_effect <- rnorm(num_subjects * num_measurements, mean=0, sd=1)
+
+# Combining into a design matrix
+X <- cbind(intercept, fixed_effect)
+
+
+random_intercepts <- rnorm(num_subjects)
+random_slopes <- rnorm(num_subjects)
+
+
+rep_intercepts <- rep(random_intercepts, each = num_measurements)
+rep_slopes <- rep(random_slopes, each = num_measurements)
+
+# Coefficients for the fixed effects (arbitrarily chosen for demonstration)
+beta <- c(1, 1) # Intercept beta and slope beta for the fixed effect
+
+# Calculating Y
+Y <- X %*% beta + rep_intercepts + X[, 2] * rep_slopes
+
+data <- data.frame(Subject = rep(1:num_subjects, each = num_measurements), 
+                   Intercept = intercept, 
+                   FixedEffect = fixed_effect, 
+                   Y = Y)
+
+head(data)
+
+
+model <- lmer(Y ~ FixedEffect + (1 + FixedEffect | Subject), data = data)
+
+```
+
+
+
+```{r}
+library(lme4)
+
+# Setting seed for reproducibility
+set.seed(0)
+
+num_subjects <- 2000
+num_measurements <- 1000
+
+# Generating fixed effect
+fixed_effect <- rnorm(num_subjects * num_measurements, mean = 2, sd = 1)
+
+# Generating independent random intercepts and slopes for each subject
+random_intercepts <- rnorm(num_subjects, mean=0, sd=0.2)
+random_slopes <- rnorm(num_subjects, mean=0, sd=0.1)
+
+# Replicating the random intercepts and slopes for each measurement
+rep_intercepts <- rep(random_intercepts, each = num_measurements)
+rep_slopes <- rep(random_slopes, each = num_measurements)
+
+# Calculating Y
+Y <- rep_intercepts + fixed_effect + fixed_effect * rep_slopes
+
+# Creating a data frame
+data <- data.frame(Subject = rep(1:num_subjects, each = num_measurements), 
+                   FixedEffect = fixed_effect, 
+                   Y = Y)
+
+# Fitting a linear mixed model
+model <- lmer(Y ~ FixedEffect + (0 + FixedEffect | Subject), data = data, control = lmerControl(optimizer = "bobyqa"))
+
+```
+
+```{r}
+summary(model)
+var(Y)
+```
+
+```{r}
+var(fixed_effect)
+var(rep_slopes)
+var(fixed_effect)*var(rep_slopes) + var(fixed_effect)
+```
+
+

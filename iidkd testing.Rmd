@@ -1,0 +1,83 @@
+---
+title: "iidkd testing"
+author: "August Arnstad"
+date: "`r format(Sys.time(), '%d.%m.%Y')`"
+output:
+  pdf_document:
+    toc: yes
+    toc_depth: '2'
+  html_document:
+    toc: yes
+    toc_float: yes
+    toc_depth: 2
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+library(formatR)
+showsol <- FALSE
+library(knitr)
+library(devtools)
+knitr::opts_chunk$set(tidy.opts = list(width.cutoff = 68), 
+                      tidy = TRUE, 
+                      warning = FALSE, 
+                      error = FALSE, 
+                      message = FALSE, 
+                      echo = TRUE, 
+                      fig.width=7, 
+                      fig.height=5, 
+                      fig.align="center")
+
+library(remotes)
+library(devtools)
+if(!require(devtools)) install.packages("devtools")
+devtools::install_github("AugustArnstad/VariableImportanceINLA")
+library(VariableImportanceINLA)
+```
+
+```{r}
+library(INLA)
+library(ggplot2)
+library(reshape2)
+library(tidyr)
+library(mvtnorm)
+set.seed(1)
+
+# Number of observations and groups
+n <- 10
+
+
+m <- 2
+rho <- 0.8
+Sigma <- matrix(NA, m, m)
+diag(Sigma) <- (1/(1:m))^2
+for(i in 1:m) {
+    for (j in 1:m) {
+        if (i != j) {
+            Sigma[i, j] <- rho^abs(i-j) * sqrt(Sigma[i, i] * Sigma[j, j])
+        }
+    } 
+}
+
+uv <- c()
+uuvv <- rmvnorm(n/m, sigma = Sigma)
+uuvv
+for(i in 1:m) {
+    uv <- c(uv, uuvv[, i])
+}
+uv = data.frame(i = 1:n, uv)
+
+
+
+error_term <- rnorm(n, mean=0, sd=1)
+
+Y <- uv$uv + error_term 
+
+# Combine into a data frame
+data.inla <- data.frame(Y, uv$i, uv$uv)#, Z3)
+names(data.inla)
+
+uv
+```
+

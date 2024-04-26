@@ -1,0 +1,260 @@
+---
+title: "Animal Model code"
+author: "August Arnstad"
+date: "`r format(Sys.time(), '%d.%m.%Y')`"
+output:
+  pdf_document:
+    toc: yes
+    toc_depth: '2'
+  html_document:
+    toc: yes
+    toc_float: yes
+    toc_depth: 2
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+library(formatR)
+showsol <- FALSE
+library(knitr)
+library(devtools)
+knitr::opts_chunk$set(tidy.opts = list(width.cutoff = 68), 
+                      tidy = TRUE, 
+                      warning = FALSE, 
+                      error = FALSE, 
+                      message = FALSE, 
+                      echo = TRUE, 
+                      fig.width=7, 
+                      fig.height=5, 
+                      fig.align="center")
+
+library(remotes)
+library(devtools)
+if(!require(devtools)) install.packages("devtools")
+devtools::install_github("AugustArnstad/VariableImportanceINLA")
+library(VariableImportanceINLA)
+```
+
+```{r, echo = FALSE, eval = FALSE}
+setwd("/Users/augustarnstad/Library/CloudStorage/OneDrive-NTNU/Semester_10/Animal modelling INLA, sparrows")
+source("code/DataPrep.R")
+str(d.morph)
+
+```
+
+```{r, echo = FALSE, eval = FALSE}
+AA <- solve(Ainv$Ainv)
+# Some trick to make the thing numerically stable, because the inversion leads to some tiny non-zero values that are artefacts of the inversion...:
+AA <- round(AA,8)
+AA[AA==0] <- 0
+# Final A-matrix:
+AAA <- AA[d.map[1:3116,2],d.map[1:3116,2]]
+#
+isSymmetric(AAA)
+# A-matrix needs to be inverted to be used in INLA:
+Cmatrix <- solve(AAA)
+# Again, to correct for some numerical instability, we set values <10^{-4} to 0
+Cmatrix <- round(Cmatrix,4)
+Cmatrix[Cmatrix==0] <- 0
+isSymmetric(Cmatrix)
+```
+
+```{r, echo = FALSE, eval = FALSE}
+prior_mass = list(theta = list(initial=log(0.5),  prior="pc.prec",param=c(sqrt(2),0.05)))
+
+model_mass <- VariableImportanceINLA::perform_inla_analysis(d.morph, formula.mass, "gaussian", priors = prior_mass)
+
+samples_mass <- VariableImportanceINLA::sample_posterior_gaussian(model_mass, formula.mass, d.morph, n_samp=10000, additive_param = "IDC2")
+plots_mass <- VariableImportanceINLA::plot_samples(samples_mass)
+
+```
+
+```{r, echo = FALSE, eval = FALSE}
+plots_mass$fixed_effects
+plots_mass$random_effects
+plots_mass$heritability
+plots_mass$R2
+```
+
+```{r}
+prior_wing = list(theta = list(initial=log(0.5),  prior="pc.prec",param=c(sqrt(2),0.05)))
+
+model_wing <- VariableImportanceINLA::perform_inla_analysis(d.morph, formula.wing, "gaussian", priors = prior_wing)
+
+samples_wing <- VariableImportanceINLA::sample_posterior_gaussian(model_wing, formula.wing, d.morph, n_samp=10000, additive_param = "IDC2")
+plots_wing <- VariableImportanceINLA::plot_samples(samples_wing)
+```
+
+```{r}
+plots_wing$fixed_effects
+plots_wing$random_effects
+plots_wing$heritability
+plots_wing$R2
+```
+
+```{r}
+library(ggplot2)
+
+# Example data
+data <- data.frame(
+  Covariate = c("Covariate 1", "Covariate 2", "Covariate 3", "Error"),
+  Contribution = c(0.4, 0.25, 0.05, 0.30)  # These values should sum to 100 or the total variance
+)
+
+data$Covariate <- factor(data$Covariate, levels = c("Error", "Covariate 3", "Covariate 2", "Covariate 1"))
+
+R2 <- sum(data$Contribution[data$Covariate != "Error"])
+cov1 <- 0.4
+cov2 <- 0.25
+cov3 <- 0.05
+# Create the plot
+plot <- ggplot(data, aes(x = "", y = Contribution, fill = Covariate)) +
+  geom_bar(stat = "identity", width = 0.5) +  # Adjust the bar width here
+  scale_fill_brewer(palette = "Pastel1") +
+  theme_minimal() +
+  labs(y = "",
+       x = "",
+       title = "Relative Importance of Variables",
+       fill = "Covariate") +
+  theme(axis.text.x = element_blank()) +
+  geom_hline(yintercept = 0.7, color = "black", linetype = "dashed") +
+  annotate("text", x = 0.7, y = 0.65, label = paste("R2 =", R2), size = 8, hjust = 1) +
+  annotate("text", x = 1, y = 0.67, label = paste("Importance =", cov3), size = 4, hjust = 1) +
+  annotate("text", x = 1.042, y = 0.52, label = paste("Importance =", cov2), size = 5, hjust = 1) +
+  annotate("text", x = 1.07, y = 0.2, label = paste("Importance =", cov1), size = 6, hjust = 1) 
+
+# Display the plot
+print(plot)
+
+3/(7 + pi^2/3)
+```
+
+
+```{r}
+prior_tarsus = list(theta = list(initial=log(0.5),  prior="pc.prec",param=c(sqrt(2),0.05)))
+
+model_tarsus <- VariableImportanceINLA::perform_inla_analysis(d.morph, formula.tarsus, "gaussian", priors = prior_tarsus)
+
+samples_tarsus <- VariableImportanceINLA::sample_posterior_gaussian(model_tarsus, formula.tarsus, d.morph, n_samp=10000, additive_param = "IDC2")
+plots_tarsus <- VariableImportanceINLA::plot_samples(samples_tarsus)
+```
+
+```{r}
+plots_tarsus$fixed_effects
+plots_tarsus$random_effects
+plots_tarsus$heritability
+plots_tarsus$R2
+
+dim(d.morph)
+```
+
+# Custom plots for use in thesis.
+# In general, I think I should pick a colour palette that is the same for the whole thesis.
+```{r}
+str(samples_mass)
+
+additive_genetic <- "IDC2"
+
+# Dynamically specify the column name in aes() using rlang's sym() and !! for tidy evaluation
+heritability_mass <- ggplot(samples_mass$scaled_random_samples, aes(x = !!sym(additive_genetic))) +
+  geom_histogram(aes(y = ..density..), fill = "#C6CDF7", alpha = 0.7, bins = 40) +
+  geom_density(color = "#E6A0C4", adjust = 1.5, linewidth=1.5) +
+    geom_point(aes(x = mean(samples_mass$scaled_random_samples$IDC2), y = 0), color = "#E6A0C4", size = 4) +
+  labs(title = paste("Heritability of mass"), x = "Samples of heritability", y = "Frequency") +
+  theme_minimal() +
+  theme(legend.position = "none",
+    axis.title.x = element_text(size = 24),
+    axis.title.y = element_text(size = 24),
+    axis.text.x = element_text(size = 24),
+    axis.text.y = element_text(size = 24)
+    ) 
+# theme(
+#   plot.background = element_rect(fill = "white"),
+#   #panel.grid.major = element_blank(),
+#   #panel.grid.minor = element_blank(),
+#   text = element_text(size = 12, family = "Arial"),
+#   axis.text.x = element_text(angle = 45, hjust = 1)
+# )
+
+heritability_mass
+
+mean(samples_mass$scaled_random_samples$IDC2)
+
+quantile(samples_mass$scaled_random_samples$IDC2, c(0.025, 0.975))
+```
+
+
+```{r}
+str(samples_wing)
+
+
+# Dynamically specify the column name in aes() using rlang's sym() and !! for tidy evaluation
+heritability_wing <- ggplot(samples_wing$scaled_random_samples, aes(x = !!sym(additive_genetic))) +
+  geom_histogram(aes(y = ..density..), fill = "#C6CDF7", alpha = 0.7, bins = 40) +
+  geom_density(color = "#E6A0C4", adjust = 1.5, linewidth=1.5) +
+  geom_point(aes(x = mean(samples_wing$scaled_random_samples$IDC2), y = 0), color = "#E6A0C4", size = 4) +
+  labs(title = paste("Heritability of wing"), x = "Samples of heritability", y = "Frequency") +
+  theme_minimal() +
+  theme(legend.position = "none",
+    axis.title.x = element_text(size = 24),
+    axis.title.y = element_text(size = 24),
+    axis.text.x = element_text(size = 24),
+    axis.text.y = element_text(size = 24)
+    ) 
+# theme(
+#   plot.background = element_rect(fill = "white"),
+#   #panel.grid.major = element_blank(),
+#   #panel.grid.minor = element_blank(),
+#   text = element_text(size = 12, family = "Arial"),
+#   axis.text.x = element_text(angle = 45, hjust = 1)
+# )
+
+heritability_wing
+
+mean(samples_wing$scaled_random_samples$IDC2)
+
+quantile(samples_wing$scaled_random_samples$IDC2, c(0.025, 0.975))
+```
+
+
+```{r}
+str(samples_tarsus)
+
+# Dynamically specify the column name in aes() using rlang's sym() and !! for tidy evaluation
+heritability_tarsus <- ggplot(samples_tarsus$scaled_random_samples, aes(x = !!sym(additive_genetic))) +
+  geom_histogram(aes(y = ..density..), fill = "#C6CDF7", alpha = 0.7, bins = 100) +
+  geom_density(color = "#E6A0C4", adjust = 1.5, linewidth=1.5) +
+    geom_point(aes(x = mean(samples_tarsus$scaled_random_samples$IDC2), y = 0), color = "#E6A0C4", size = 4) +
+  labs(title = paste("Heritability of tarsus"), x = "Samples of heritability", y = "Frequency") +
+  theme_minimal() +
+  theme(legend.position = "none",
+    axis.title.x = element_text(size = 24),
+    axis.title.y = element_text(size = 24),
+    axis.text.x = element_text(size = 24),
+    axis.text.y = element_text(size = 24)
+    ) 
+
+
+heritability_tarsus
+
+mean(samples_tarsus$scaled_random_samples$IDC2)
+quantile(samples_tarsus$scaled_random_samples$IDC2, c(0.025, 0.975))
+sd(samples_tarsus$scaled_random_samples$IDC2)#/sqrt(length(samples_tarsus$scaled_random_samples$IDC2))
+
+```
+
+```{r}
+setwd("/Users/augustarnstad/Library/CloudStorage/OneDrive-NTNU/Semester_10/Master/Latex/Figures")
+plot_folder <- "House sparrow study"
+
+# Check if the folder exists, if not, create it
+if (!dir.exists(plot_folder)) {
+  dir.create(plot_folder)
+}
+
+ggsave(filename="Heritability_mass.png", plot=heritability_mass, path=plot_folder, width = 10, height = 6, dpi = 300)
+ggsave(filename="Heritability_wing.png", plot=heritability_wing, path=plot_folder, width = 10, height = 6, dpi = 300)
+ggsave(filename="Heritability_tarsus.png", plot=heritability_tarsus, path=plot_folder, width = 10, height = 6, dpi = 300)
+
+```

@@ -1,0 +1,201 @@
+---
+title: "Poisson log link"
+author: "August Arnstad"
+date: "`r format(Sys.time(), '%d.%m.%Y')`"
+output:
+  pdf_document:
+    toc: yes
+    toc_depth: '2'
+  html_document:
+    toc: yes
+    toc_float: yes
+    toc_depth: 2
+editor_options: 
+  chunk_output_type: console
+---
+## Example code for poisson model
+
+```{r}
+library(INLA)
+library(ggplot2)
+library(reshape2)
+library(tidyr)
+set.seed(69)
+
+# Number of observations and groups
+n <- 10000
+n_groups <- 100
+
+# Simulate fixed effects
+X1 <- rnorm(n, mean=0, sd=1)
+X2 <- rnorm(n, mean=0, sd=1)
+X3 <- rnorm(n, mean=0, sd=1)
+
+# Simulate random effects groups
+Z1 <- sample(1:n_groups, n, replace=TRUE)
+
+# Coefficients for fixed effects
+beta1 <- 1
+beta2 <- sqrt(2)
+beta3 <- sqrt(3)
+
+# Coefficients for random effects (standard deviations)
+sigma_z1 <- 1
+
+# Simulate outcome variable Y
+random_effect_contributions_z1 <- rnorm(n_groups, mean=0, sd=sigma_z1)[Z1]
+
+eta <- beta1*X1 + beta2*X2 + beta3*X3 + random_effect_contributions_z1 #+ error_term  + random_effect_contributions_z2 + beta0 
+
+# Linear predictor and expected count
+lambda <- exp(eta)
+# Simulate Poisson response
+y_pois <- rpois(n, lambda = lambda)
+
+# Combine into a data frame
+data_inla_poisson <- data.frame(y_pois, X1, X2, X3, Z1)#, Z2, id, Z3)
+
+expected_pois_log <- (1)/(distribution_var + 1 + 2 + 3 + 1)
+```
+
+
+```{r}
+
+glmm_log <- y_pois ~ X1 + X2 + X3 + f(Z1, model="iid")
+model_log_2 <- VariableImportanceINLA::perform_inla_analysis(data_inla_poisson, glmm_log, family = "poisson", link_func = "log")
+
+intercept <- summary(model_log)$fixed[1]
+
+rptR_pois <- rptPoisson(y_pois ~ X1 + X2 + X3 + (1 | Z1), grname =  
+    c("Fixed", "Z1"), data = data_inla_poisson, link="log", nboot = 10, npermut = 0, adjusted=FALSE)
+
+stoffel_heritability_pois <- rptR_pois$R$Z1[2]
+
+stoffel_heritability_pois
+
+lambda_pois <- exp(intercept + 0.5*(1))
+distribution_var <- log(1 + 1/lambda_pois)
+
+distribution_var
+
+expected_pois_log
+
+summary(model_log_2)
+```
+
+
+
+```{r}
+log_samples <- VariableImportanceINLA::sample_posterior_count(model_log, glmm_log, data_inla_poisson, n_samp=500, additive_param = "Z1")
+
+```
+
+
+```{r}
+plot_log <- VariableImportanceINLA::plot_samples(log_samples)
+
+summary(model_log)
+plot_pois_glmm1$fixed_effects
+plot_pois_glmm1$random_effects
+plot_pois_glmm1$R2
+plot_pois_glmm1$heritability
+
+
+stoffel_heritability_pois
+expected_pois_log 
+mean(log_samples$scaled_random_samples$Z1)
+
+expected_R2m_poisson <- (1+2+3)/(distribution_var + 1 + 2 + 3 + 1)
+expected_R2c_poisson <- (1+2+3+1)/(distribution_var + 1 + 2 + 3 + 1)
+
+```
+
+```{r}
+library(wesanderson)
+str(wes_palette("GrandBudapest2"))
+str(wes_palette("Moonrise3"))
+
+melted_fixed_poisson <- melt(as.data.frame(log_samples$scaled_importance_samples))
+
+melted_fixed_poisson$intercept <- ifelse(
+  melted_fixed_poisson$variable == "X1", expected_pois_log,
+  ifelse(melted_fixed_poisson$variable == "X2", 2 * expected_pois_log,
+  ifelse(melted_fixed_poisson$variable == "X3", 3 * expected_pois_log, NA))
+)
+
+fixed_effects_poisson <- ggplot(melted_fixed_poisson, aes(x = value)) +
+  geom_histogram(aes(y = ..density..), fill = "#F1BB7B", alpha = 0.8) +
+  geom_density(colour = "#FD6467", adjust = 1.5, linewidth=1.5) +
+  geom_vline(aes(xintercept = intercept), linetype = "dashed", color = "green", size = 1) +
+  scale_fill_manual(values = wes_palette("Royal1")) +
+  labs(title = "Relative Importance of Fixed Effects",
+       x = "Value",
+       y = "Density") +
+  theme_minimal() +
+  facet_wrap(~ variable, scales = "free_x") 
+
+fixed_effects_poisson
+```
+
+```{r}
+melted_random_poisson <- melt(as.data.frame(log_samples$scaled_random_samples[, c("Z1")]))
+random_effects_poisson <- ggplot(melted_random_poisson, aes(x = value)) +
+  geom_histogram(aes(y = ..density..), fill = "#C6CDF7", alpha = 0.8) +
+  geom_density(colour = "#E6A0C4", adjust = 1.5, linewidth=1.5) +
+  geom_vline(xintercept = stoffel_heritability_pois, linetype = "dashed", color = "black", size = 1) +
+  geom_vline(xintercept = expected_pois_log, linetype = "dashed", color = "green", size = 1) +
+  labs(title = "Relative Importance of Fixed Effects",
+       x = "Value",
+       y = "Density") +
+  theme_minimal() +
+  facet_wrap(~ variable, scales = "free_x") 
+
+random_effects_poisson
+```
+
+
+```{r}
+
+R2_data_poisson <- data.frame(R2_marginal = log_samples$R2_marginal$`Marginal R2`,
+                      R2_conditional = log_samples$R2_conditional$`Conditional R2`)
+
+# Convert from wide to long format
+R2_long_poisson <- pivot_longer(R2_data_poisson, cols = c(R2_marginal, R2_conditional), names_to = "Type", values_to = "Value")
+
+R2_long_poisson
+
+# Adjust the factor levels to control the order of the facets
+R2_long_poisson$Type <- factor(R2_long_poisson$Type, levels = c("R2_marginal", "R2_conditional"))
+
+# Plot
+R2_plot_poisson <- ggplot(R2_long_poisson, aes(x = Value, fill = Type)) +
+  geom_histogram(aes(y = ..density..), alpha = 0.5, position = "identity", bins = 30) + # Added bins for clarity
+  geom_density(alpha = 0.75, adjust = 1.5, colour = "#FAD77B", linewidth=1.5) +
+  geom_vline(data = data.frame(Type = "R2_marginal"), aes(xintercept = expected_R2m_poisson), linetype = "dashed", color = "green", size = 1) +
+  geom_vline(data = data.frame(Type = "R2_conditional"), aes(xintercept = expected_R2c_poisson), linetype = "dashed", color = "green", size = 1) +
+  labs(title = "Marginal and Conditional R2", x = "R2 Value", y = "Density") +
+  scale_fill_manual(values = c("R2_marginal" = "#85D4E3", "R2_conditional" = "#F4B5BD")) +
+  theme_minimal() +
+  facet_wrap(~ Type, scales = "free_x")
+
+# Print the plot
+R2_plot_poisson
+```
+
+
+
+```{r}
+plot_folder <- "/Users/augustarnstad/Library/CloudStorage/OneDrive-NTNU/Semester_10/Master/Latex/Figures/Simulation study"
+
+# Check if the folder exists, if not, create it
+if (!dir.exists(plot_folder)) {
+  dir.create(plot_folder)
+}
+
+
+ggsave(filename="Poisson_fixed.png", plot=fixed_effects_poisson, path=plot_folder)
+ggsave(filename="Poisson_random.png", plot=random_effects_poisson, path=plot_folder)
+ggsave(filename="Poisson_R2.png", plot=R2_plot_poisson, path=plot_folder)
+
+```
+

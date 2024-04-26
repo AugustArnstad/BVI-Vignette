@@ -1,0 +1,252 @@
+---
+title: "Stoffel rpt2 comparison"
+author: "August Arnstad"
+date: "`r format(Sys.time(), '%d.%m.%Y')`"
+output:
+  pdf_document:
+    toc: yes
+    toc_depth: '2'
+  html_document:
+    toc: yes
+    toc_float: yes
+    toc_depth: 2
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+library(formatR)
+showsol <- FALSE
+library(knitr)
+library(devtools)
+knitr::opts_chunk$set(tidy.opts = list(width.cutoff = 68), 
+                      tidy = TRUE, 
+                      warning = FALSE, 
+                      error = FALSE, 
+                      message = FALSE, 
+                      echo = TRUE, 
+                      fig.width=7, 
+                      fig.height=5, 
+                      fig.align="center")
+
+library(remotes)
+library(devtools)
+if(!require(devtools)) install.packages("devtools")
+devtools::install_github("AugustArnstad/VariableImportanceINLA")
+library(VariableImportanceINLA)
+```
+
+# Comparison of the rptR method and VariableImportanceINLA
+Comparison is done using examples from the rptR vignette found at:
+https://cran.r-project.org/web/packages/rptR/vignettes/rptR.html
+and in the article
+Stoffel, M. A., Nakagawa, S., & Schielzeth, H. (2017). rptR: repeatability estimation and variance decomposition by generalized linear mixed-effects models. Methods in Ecology and Evolution, 8(11), 1639-1644.
+
+
+## Compare Poisson regression (article)
+
+```{r}
+library(rptR)
+library(INLA)
+library(ggplot2)
+library(reshape2)
+library(tidyr)
+library(mvtnorm)
+
+data(BeetlesFemale)
+
+data_pois <- BeetlesFemale
+
+data_pois$Treatment <- as.numeric(data_pois$Treatment)
+
+rptPois <- rptPoisson(Egg ~ Treatment+(1|Container)+(1|Population), grname=c("Container", "Population"), data=data_pois, link="log", nboot=10)
+
+
+stoffel_heritability_poisson <- rptPois$R$Population[2]
+
+poisson_formula <- Egg ~ Treatment+ f(Container, model="iid") + f(Population, model="iid") 
+
+model_pois_glm <- VariableImportanceINLA::perform_inla_analysis(data_pois, poisson_formula, family = "poisson", link_func = "log")
+
+pois_glm_samples <- VariableImportanceINLA::sample_posterior_count(model_pois_glm, poisson_formula, data_pois, n_samp=1000, additive_param = "Population")
+
+```
+
+
+## Compare Gaussian regression from rptR by Stoffel and VariableImportanceINLA (vignette, rep1)
+
+```{r}
+data(BeetlesBody)
+
+data_gauss <- BeetlesBody
+
+rpt_gauss_1 <- rpt(BodyL ~ (1 | Population), grname = "Population", data = data_gauss, datatype = "Gaussian", nboot = 10)
+
+gauss_formula <- BodyL ~ f(Population, model="iid")
+
+stoffel_heritability_gauss_1 <- rpt_gauss_1$R$Population
+stoffel_heritability_gauss_1
+
+model_gauss_glm <- VariableImportanceINLA::perform_inla_analysis(data_gauss, gauss_formula, family = "gaussian")
+
+gauss_1_glm_samples <- VariableImportanceINLA::sample_posterior_gaussian(model_gauss_glm, gauss_formula, data_gauss, n_samp=1000, additive_param = "Population")
+
+```
+
+## Compare Gaussian with multiple random effects (vignette, rep3)
+
+```{r}
+rpt_gauss_2 <- rpt(BodyL ~ (1 | Population) + (1 | Container), grname = c("Population", "Container"), data = data_gauss, datatype = "Gaussian", nboot = 10)
+    #nboot = 0, npermut = 0)
+
+stoffel_heritability_gauss_2 <- rpt_gauss_2$R$Container
+
+gauss_formula_multiple <- BodyL ~ f(Population, model="iid") + f(Container, model="iid")
+
+
+model_gauss_glm_multiple <- VariableImportanceINLA::perform_inla_analysis(data_gauss, gauss_formula_multiple, family = "gaussian")
+
+gauss_2_glm_samples <- VariableImportanceINLA::sample_posterior_gaussian(model_gauss_glm_multiple, gauss_formula_multiple, data_gauss, n_samp=1000, additive_param = "Container")
+
+```
+
+## Compare Binary regression (vignette, rep10)
+
+```{r}
+data(BeetlesMale)
+
+data_bin <- BeetlesMale
+
+
+rptBinary <- rpt(Colour ~ Treatment + (1 | Container) + (1 | Population), grname =  
+    "Population", data = BeetlesMale, datatype = "Binary", nboot = 10, npermut = 0)
+
+stoffel_heritability_binomial <- rptBinary$R$Population[2]
+
+bin_formula <- Colour ~ Treatment + f(Container, model="iid") + f(Population, model="iid")
+
+model_bin_glm <- VariableImportanceINLA::perform_inla_analysis(data_bin, bin_formula, family = "binomial", link_func = "logit")
+
+bin_glm_samples <- VariableImportanceINLA::sample_posterior_count(model_bin_glm, bin_formula, data_bin, n_samp=1000, additive_param = "Population")
+
+```
+
+```{r}
+library(dplyr)
+heritability_data_poisson <- pois_glm_samples$heritability %>%
+  rename(Heritability = `Heritability of: Population`)
+
+# Create the ggplot histogram with a density overlay
+heritability_poisson <- ggplot(heritability_data_poisson, aes(x = Heritability)) +
+  geom_histogram(aes(y = ..density..), fill = "#C6CDF7", bins = 30, alpha = 0.7) +
+  geom_density(color = "#E6A0C4", adjust = 1.5, linewidth = 1) +
+  geom_vline(aes(xintercept = stoffel_heritability_poisson), color = "magenta", linetype = "dashed", size = 1) +
+  labs(#title = "Distribution of Heritability of Population", 
+       x = "Heritability", 
+       y = "Density") +
+  theme_minimal() +
+  theme(legend.position = "none",
+    axis.title.x = element_text(size = 24),
+    axis.title.y = element_text(size = 24),
+    axis.text.x = element_text(size = 24),
+    axis.text.y = element_text(size = 24)
+  )
+
+heritability_poisson
+
+```
+
+```{r}
+library(dplyr)
+
+names(gauss_1_glm_samples$heritability)
+
+heritability_data_gauss_1 <- gauss_1_glm_samples$heritability %>%
+  rename(Heritability = `Heritability of: Population`)
+
+# Create the ggplot histogram with a density overlay
+heritability_gauss_1 <- ggplot(heritability_data_gauss_1, aes(x = Heritability)) +
+  geom_histogram(aes(y = ..density..), fill = "#C6CDF7", bins = 30, alpha = 0.7) +
+  geom_density(color = "#E6A0C4", adjust = 1.5, linewidth = 1) +
+  geom_vline(aes(xintercept = stoffel_heritability_gauss_1), color = "magenta", linetype = "dashed", size = 1) +
+  labs(#title = "Distribution of Heritability of Population", 
+       x = "Heritability", 
+       y = "Density") +
+  theme_minimal() + 
+  theme(legend.position = "none",
+    axis.title.x = element_text(size = 24),
+    axis.title.y = element_text(size = 24),
+    axis.text.x = element_text(size = 24),
+    axis.text.y = element_text(size = 24)
+  )
+
+heritability_gauss_1
+stoffel_heritability_gauss_1
+```
+
+```{r}
+library(dplyr)
+heritability_data_gauss_2 <- gauss_2_glm_samples$heritability %>%
+  rename(Heritability = `Heritability of: Container`)
+
+# Create the ggplot histogram with a density overlay
+heritability_gauss_2 <- ggplot(heritability_data_gauss_2, aes(x = Heritability)) +
+  geom_histogram(aes(y = ..density..), fill = "#C6CDF7", bins = 30, alpha = 0.7) +
+  geom_density(color = "#E6A0C4", adjust = 1.5, linewidth = 1) +
+  geom_vline(aes(xintercept = stoffel_heritability_gauss_2), color = "magenta", linetype = "dashed", size = 1) +
+  labs(#title = "Distribution of Heritability of Population", 
+       x = "Heritability", 
+       y = "Density") +
+  theme_minimal() + 
+  theme(legend.position = "none",
+    axis.title.x = element_text(size = 24),
+    axis.title.y = element_text(size = 24),
+    axis.text.x = element_text(size = 24),
+    axis.text.y = element_text(size = 24)
+  )
+
+heritability_gauss_2
+
+```
+
+
+```{r}
+library(dplyr)
+
+heritability_data_binomial <- bin_glm_samples$heritability %>%
+  rename(Heritability = `Heritability of: Population`)
+
+
+# Create the ggplot histogram with a density overlay
+heritability_binomial <- ggplot(heritability_data_binomial, aes(x = Heritability)) +
+  geom_histogram(aes(y = ..density..), fill = "#C6CDF7", bins = 30, alpha = 0.7) +
+  geom_density(color = "#E6A0C4", adjust = 1.5, linewidth = 1) +
+  geom_vline(aes(xintercept = stoffel_heritability_binomial), color = "magenta", linetype = "dashed", size = 1) +
+  labs(#title = "Distribution of Heritability of Population", 
+       x = "Heritability", 
+       y = "Density") +
+  theme_minimal() +   
+  theme(legend.position = "none",
+    axis.title.x = element_text(size = 24),
+    axis.title.y = element_text(size = 24),
+    axis.text.x = element_text(size = 24),
+    axis.text.y = element_text(size = 24)
+  )
+
+heritability_binomial
+```
+
+
+```{r}
+plot_folder <- "/Users/augustarnstad/Library/CloudStorage/OneDrive-NTNU/Semester_10/Master/Latex/Figures/Stoffel Comparison"
+
+# Check if the folder exists, if not, create it
+if (!dir.exists(plot_folder)) {
+  dir.create(plot_folder)
+}
+
+ggsave(filename="Heritability_egg_poisson.png", plot=heritability_poisson, path=plot_folder, width = 10, height = 6, dpi = 300)
+ggsave(filename="Heritability_colour_binomial.png", plot=heritability_binomial, path=plot_folder, width = 10, height = 6, dpi = 300)
+
+
+```
